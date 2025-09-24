@@ -1,0 +1,152 @@
+name: MediaLens.Native
+
+on:
+  push:
+  pull_request:
+  release:
+    types:
+      - published
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  PROJECT_NAME: MediaLens.Native
+  GITHUB_FEED: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NUGET_FEED: https://api.nuget.org/v3/index.json
+  NUGET_KEY: ${{ secrets.NUGET_KEY }}
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  build-native:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y build-essential autoconf automake libtool pkg-config || true
+
+      - name: Clone MediaInfoLib
+        run: git clone --depth=1 https://github.com/MediaArea/MediaInfoLib.git
+
+      - name: Build MediaInfoLib (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd MediaInfoLib/Project/GNU/Library
+          ./autogen.sh || true
+          ./configure --enable-shared
+          make -j$(nproc)
+          cd ../../..
+          mkdir -p native
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            cp MediaInfoLib/Project/GNU/Library/.libs/libmediainfo.so* native/
+          else
+            cp MediaInfoLib/Project/GNU/Library/.libs/libmediainfo.*dylib native/
+          fi
+
+      - name: Setup MSBuild (Windows)
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build MediaInfoLib (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          msbuild MediaInfoLib\Project\MSVC2019\MediaInfoLib.sln /p:Configuration=Release /p:Platform=x64
+          mkdir native
+          copy MediaInfoLib\Project\MSVC2019\x64\Release\MediaInfo.dll native\
+          copy MediaInfoLib\Project\MSVC2019\x64\Release\MediaInfo.pdb native\ || echo "No PDB generated"
+
+      - name: Upload Native Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.os }}
+          path: native/
+
+  pack:
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Native Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: runtimes
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.x
+
+      - name: Pack NuGet
+        run: |
+          latestTag=$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.1)
+          runId=$GITHUB_RUN_ID
+          packageVersion="${latestTag//v}-build.${runId}"
+
+          # Move artifacts into runtime-specific folders
+          mkdir -p src/$PROJECT_NAME/runtimes/win-x64/native
+          mkdir -p src/$PROJECT_NAME/runtimes/linux-x64/native
+          mkdir -p src/$PROJECT_NAME/runtimes/osx-x64/native
+
+          cp runtimes/native-windows-latest/* src/$PROJECT_NAME/runtimes/win-x64/native/ || true
+          cp runtimes/native-ubuntu-latest/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
+          cp runtimes/native-macos-latest/* src/$PROJECT_NAME/runtimes/osx-x64/native/ || true
+
+          dotnet pack -v normal -c Release -o ./artifacts \
+            -p:PackageVersion=$packageVersion \
+            src/$PROJECT_NAME/$PROJECT_NAME.csproj
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: ./artifacts/*.nupkg
+
+  prerelease:
+    needs: pack
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+      - name: Push to GitHub Feed
+        run: dotnet nuget push ./*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
+        env:
+          NUGET_AUTH_TOKEN: ${{ github.token }}
+
+  deploy:
+    needs: pack
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.x
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+      - name: Push to GitHub Feed
+        run: dotnet nuget push ./nupkg/*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
+        env:
+          NUGET_AUTH_TOKEN: $GITHUB_TOKEN
+      - name: Push to NuGet Feed
+        run: dotnet nuget push ./nupkg/*.nupkg --source $NUGET_FEED --skip-duplicate --api-key $NUGET_KEY

@@ -4,4 +4,42 @@
         <TargetFramework>netstandard2.0</TargetFramework>
     </PropertyGroup>
 
+    <!-- NuGet settings -->
+    <PropertyGroup>
+        <PackageId>MediaLens.Native</PackageId>
+        <Title>MediaLens.Native</Title>
+        <PackageSummary>Cross-platform native binaries of MediaInfoLib</PackageSummary>
+        <PackageTags>MediaInfo</PackageTags>
+        <Authors>Michael Hochriegl</Authors>
+        <PackageProjectUrl>https://github.com/MichaelHochriegl/MediaLens.Native</PackageProjectUrl>
+        <PackageIcon>logo_128x128.png</PackageIcon>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryUrl>https://github.com/MichaelHochriegl/MediaLens.Native</RepositoryUrl>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <Copyright>Copyright © $([System.DateTime]::Now.Year) Michael Hochriegl</Copyright>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <Description>
+            Cross-platform native binaries of MediaInfoLib, packaged for use in .NET projects.
+        </Description>
+        <IncludeContentInPack>true</IncludeContentInPack>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Package logo -->
+        <None Include="../../assets/logo_128x128.png" Pack="true" PackagePath="" />
+        <!-- README -->
+        <None Include="../../README.md" Pack="true" PackagePath="" />
+        <!-- Licenses -->
+        <None Include="../../LICENSE" Pack="true" PackagePath="" />
+        <None Include="../../LICENSE.MediaInfo" Pack="true" PackagePath="" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Native binaries copied by pipeline -->
+        <None Include="runtimes/**" Pack="true" PackagePath="runtimes" />
+    </ItemGroup>
+
 </Project>
