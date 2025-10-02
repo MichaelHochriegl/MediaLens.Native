@@ -1,4 +1,3 @@
-
 name: MediaLens.Native
 
 on:
@@ -24,107 +23,35 @@ permissions:
 
 jobs:
   build-native:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Linux build using official SO_Compile.sh script
-      - name: Build MediaInfo (Linux)
-        if: runner.os == 'Linux'
-        timeout-minutes: 45
+      - name: Install dependencies
         run: |
-          # Install dependencies
           sudo apt-get update
           sudo apt-get install -y git automake autoconf libtool pkg-config make g++ zlib1g-dev
-          
-          # Download the official source package with SO_Compile.sh
+
+      - name: Download and extract MediaInfo source
+        run: |
           wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION/MediaInfo_DLL_$MEDIAINFO_VERSION_GNU_FromSource.tar.xz"
           tar -xf mediainfo-src.tar.xz
-          
-          # Find and run the SO_Compile.sh script
+
+      - name: Run SO_Compile.sh
+        run: |
           find . -name "SO_Compile.sh" -exec chmod +x {} \;
-          find . -name "SO_Compile.sh" -execdir bash {} \;
-          
-          # Find the compiled .so files and copy them
+          find . -name "SO_Compile.sh" -execdir ./SO_Compile.sh \;
+
+      - name: Copy libraries
+        run: |
           mkdir -p native
           find . -name "libmediainfo.so*" -exec cp {} native/ \;
-          
-          # List what we got
-          echo "Built libraries:"
-          ls -la native/
-
-      # macOS build using official SO_Compile.sh script
-      - name: Build MediaInfo (macOS)
-        if: runner.os == 'macOS'
-        timeout-minutes: 45
-        run: |
-          # Install dependencies
-          brew install automake autoconf libtool pkg-config make zlib
-          
-          # Download the official source package
-          curl -L -o mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION/MediaInfo_DLL_$MEDIAINFO_VERSION_GNU_FromSource.tar.xz"
-          tar -xf mediainfo-src.tar.xz
-          
-          # Find and run the SO_Compile.sh script
-          find . -name "SO_Compile.sh" -exec chmod +x {} \;
-          find . -name "SO_Compile.sh" -execdir bash {} \;
-          
-          # Find the compiled .dylib files and copy them
-          mkdir -p native
-          find . -name "libmediainfo.*dylib" -exec cp {} native/ \;
-          
-          # List what we got
-          echo "Built libraries:"
-          ls -la native/
-
-      # Windows build - try to download pre-built DLL
-      - name: Build MediaInfo (Windows)
-        if: runner.os == 'Windows'
-        timeout-minutes: 20
-        run: |
-          mkdir native
-          
-          # Try to download Windows DLL
-          try {
-            $url = "https://mediaarea.net/download/binary/libmediainfo0/$env:MEDIAINFO_VERSION/MediaInfo_DLL_$($env:MEDIAINFO_VERSION)_Windows_x64.zip"
-            Write-Host "Downloading from: $url"
-            Invoke-WebRequest -Uri $url -OutFile "mediainfo-win.zip"
-            Expand-Archive -Path "mediainfo-win.zip" -DestinationPath "temp"
-          
-            # Look for DLL files in various possible locations
-            Get-ChildItem "temp" -Recurse -Name "*.dll" | ForEach-Object { 
-              Write-Host "Found DLL: $_"
-              Copy-Item "temp\$_" "native\" -Force
-            }
-          } catch {
-            Write-Host "Download failed, trying alternative method..."
-            # If download fails, we could try building from source with MSVC here
-            Write-Error "Windows build failed - could not download MediaInfo DLL"
-            exit 1
-          }
-          
-          # List what we got
-          Write-Host "Built libraries:"
-          Get-ChildItem native
-
-      - name: Verify binaries exist
-        run: |
-          echo "Checking native folder contents:"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            dir native\ || echo "No native folder found"
-          else
-            ls -la native/ || echo "No native folder found"
-          fi
 
       - name: Upload Native Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: native-${{ matrix.os }}
+          name: native-linux-x64
           path: native/
 
   pack:
@@ -151,16 +78,8 @@ jobs:
           runId=$GITHUB_RUN_ID
           packageVersion="${latestTag//v}-build.${runId}"
 
-          mkdir -p src/$PROJECT_NAME/runtimes/win-x64/native
           mkdir -p src/$PROJECT_NAME/runtimes/linux-x64/native
-          mkdir -p src/$PROJECT_NAME/runtimes/osx-x64/native
-
-          cp runtimes/native-windows-latest/* src/$PROJECT_NAME/runtimes/win-x64/native/ || true
-          cp runtimes/native-ubuntu-latest/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
-          cp runtimes/native-macos-latest/* src/$PROJECT_NAME/runtimes/osx-x64/native/ || true
-
-          echo "Final runtime contents:"
-          find src/$PROJECT_NAME/runtimes -type f || true
+          cp runtimes/native-linux-x64/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
 
           dotnet pack -v normal -c Release -o ./artifacts \
             -p:PackageVersion=$packageVersion \
@@ -171,39 +90,3 @@ jobs:
         with:
           name: nupkg
           path: ./artifacts/*.nupkg
-
-  prerelease:
-    needs: pack
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: nupkg
-      - name: Push to GitHub Feed
-        run: dotnet nuget push ./*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
-        env:
-          NUGET_AUTH_TOKEN: ${{ github.token }}
-
-  deploy:
-    needs: pack
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: |
-            9.x
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: nupkg
-      - name: Push to GitHub Feed
-        run: dotnet nuget push ./nupkg/*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
-        env:
-          NUGET_AUTH_TOKEN: $GITHUB_TOKEN
-      - name: Push to NuGet Feed
-        run: dotnet nuget push ./nupkg/*.nupkg --source $NUGET_FEED --skip-duplicate --api-key $NUGET_KEY
