@@ -35,7 +35,7 @@ jobs:
 
       - name: Download and extract MediaInfo source
         run: |
-          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/24.12/MediaInfo_DLL_24.12_GNU_FromSource.tar.xz"
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION/MediaInfo_DLL_$MEDIAINFO_VERSION_GNU_FromSource.tar.xz"
           tar -xf mediainfo-src.tar.xz
 
       - name: Run SO_Compile.sh
@@ -54,7 +54,7 @@ jobs:
           name: native-linux-x64
           path: native/
 
-  pack:
+  build:
     needs: build-native
     runs-on: ubuntu-latest
     steps:
@@ -66,31 +66,36 @@ jobs:
         with:
           path: runtimes
 
-      - name: Setup .NET
+      - name: Setup .NET Core
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             9.x
 
-      - name: Pack NuGet
+      - name: Prepare native libraries
+        run: |
+          mkdir -p src/$PROJECT_NAME/runtimes/linux-x64/native
+          cp runtimes/native-linux-x64/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Pack
         run: |
           latestTag=$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.1)
           runId=$GITHUB_RUN_ID
           packageVersion="${latestTag//v}-build.${runId}"
-
-          mkdir -p src/$PROJECT_NAME/runtimes/linux-x64/native
-          cp runtimes/native-linux-x64/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
-
-          dotnet pack -v normal -c Release -o ./artifacts \
-            -p:PackageVersion=$packageVersion \
-            src/$PROJECT_NAME/$PROJECT_NAME.csproj
+          dotnet pack -v normal -c Release -o ./artifacts --no-restore --include-symbols --include-source -p:PackageVersion=$packageVersion src/$PROJECT_NAME/$PROJECT_NAME.csproj
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: nupkg
           path: ./artifacts/*.nupkg
-          
+
   prerelease:
     needs: build
     if: github.ref == 'refs/heads/main'
