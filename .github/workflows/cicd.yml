@@ -15,7 +15,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   NUGET_FEED: https://api.nuget.org/v3/index.json
   NUGET_KEY: ${{ secrets.NUGET_KEY }}
-  MEDIAINFO_VERSION: "24.12"
+  MEDIAINFO_VERSION: "25.09"
 
 permissions:
   packages: write
