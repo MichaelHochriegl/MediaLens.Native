@@ -35,7 +35,7 @@ jobs:
 
       - name: Download and extract MediaInfo source
         run: |
-          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION/MediaInfo_DLL_$MEDIAINFO_VERSION_GNU_FromSource.tar.xz"
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/24.12/MediaInfo_DLL_24.12_GNU_FromSource.tar.xz"
           tar -xf mediainfo-src.tar.xz
 
       - name: Run SO_Compile.sh
