@@ -23,6 +23,7 @@ permissions:
 jobs:
   build-native:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
@@ -35,7 +36,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config make g++ zlib1g-dev
+          sudo apt-get install -y git automake autoconf libtool pkg-config make g++ zlib1g-dev
 
       # macOS deps
       - name: Install build tools (macOS)
@@ -43,30 +44,32 @@ jobs:
         run: |
           brew update
           brew install automake autoconf libtool pkg-config make zlib
-        
+
       # Clone both ZenLib and MediaInfoLib
       - name: Clone dependencies
         run: |
           git clone --depth=1 https://github.com/MediaArea/ZenLib.git
           git clone --depth=1 https://github.com/MediaArea/MediaInfoLib.git
 
-            # Linux build
+      # Linux build
       - name: Build MediaInfoLib (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 30
         run: |
           # Build ZenLib first
           cd ZenLib/Project/GNU/Library
           ./autogen.sh
-          ./configure --enable-shared
-          make -j"$(nproc)"
+          ./configure --enable-shared --disable-debug
+          make -j2
           sudo make install
+          sudo ldconfig
           cd ../../../..
           
           # Build MediaInfoLib
           cd MediaInfoLib/Project/GNU/Library
           ./autogen.sh
-          ./configure --enable-shared
-          make -j"$(nproc)"
+          ./configure --enable-shared --disable-debug
+          make -j2
           cd ../../../..
           
           mkdir -p native
@@ -75,22 +78,23 @@ jobs:
       # macOS build
       - name: Build MediaInfoLib (macOS)
         if: runner.os == 'macOS'
+        timeout-minutes: 30
         env:
           LIBTOOLIZE: glibtoolize
         run: |
           # Build ZenLib first
           cd ZenLib/Project/GNU/Library
           ./autogen.sh
-          ./configure --enable-shared
-          make -j"$(sysctl -n hw.ncpu)"
+          ./configure --enable-shared --disable-debug
+          make -j2
           sudo make install
           cd ../../../..
           
           # Build MediaInfoLib
           cd MediaInfoLib/Project/GNU/Library
           ./autogen.sh
-          ./configure --enable-shared
-          make -j"$(sysctl -n hw.ncpu)"
+          ./configure --enable-shared --disable-debug
+          make -j2
           cd ../../../..
           
           mkdir -p native
@@ -102,17 +106,18 @@ jobs:
 
       - name: Build MediaInfoLib (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 20
         run: |
           # Build ZenLib first
           msbuild ZenLib\Project\MSVC2019\ZenLib.sln /p:Configuration=Release /p:Platform=x64
-
+          
           # Build MediaInfoLib
           msbuild MediaInfoLib\Project\MSVC2019\MediaInfoLib.sln /p:Configuration=Release /p:Platform=x64
-
+          
           mkdir native
           copy MediaInfoLib\Project\MSVC2019\x64\Release\MediaInfo.dll native\
           copy MediaInfoLib\Project\MSVC2019\x64\Release\MediaInfo.pdb native\ || echo "No PDB generated"
-      
+
       - name: Upload Native Artifacts
         uses: actions/upload-artifact@v4
         with:
