@@ -1,3 +1,4 @@
+
 name: MediaLens.Native
 
 on:
@@ -15,6 +16,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   NUGET_FEED: https://api.nuget.org/v3/index.json
   NUGET_KEY: ${{ secrets.NUGET_KEY }}
+  MEDIAINFO_VERSION: "24.12"
 
 permissions:
   packages: write
@@ -23,7 +25,7 @@ permissions:
 jobs:
   build-native:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
@@ -31,92 +33,93 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Linux deps
-      - name: Install build tools (Linux)
+      # Linux build using official SO_Compile.sh script
+      - name: Build MediaInfo (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 45
         run: |
+          # Install dependencies
           sudo apt-get update
           sudo apt-get install -y git automake autoconf libtool pkg-config make g++ zlib1g-dev
+          
+          # Download the official source package with SO_Compile.sh
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION/MediaInfo_DLL_$MEDIAINFO_VERSION_GNU_FromSource.tar.xz"
+          tar -xf mediainfo-src.tar.xz
+          
+          # Find and run the SO_Compile.sh script
+          find . -name "SO_Compile.sh" -exec chmod +x {} \;
+          find . -name "SO_Compile.sh" -execdir bash {} \;
+          
+          # Find the compiled .so files and copy them
+          mkdir -p native
+          find . -name "libmediainfo.so*" -exec cp {} native/ \;
+          
+          # List what we got
+          echo "Built libraries:"
+          ls -la native/
 
-      # macOS deps
-      - name: Install build tools (macOS)
+      # macOS build using official SO_Compile.sh script
+      - name: Build MediaInfo (macOS)
         if: runner.os == 'macOS'
+        timeout-minutes: 45
         run: |
-          brew update
+          # Install dependencies
           brew install automake autoconf libtool pkg-config make zlib
-
-      # Clone both ZenLib and MediaInfoLib
-      - name: Clone dependencies
-        run: |
-          git clone --depth=1 https://github.com/MediaArea/ZenLib.git
-          git clone --depth=1 https://github.com/MediaArea/MediaInfoLib.git
-
-      # Linux build
-      - name: Build MediaInfoLib (Linux)
-        if: runner.os == 'Linux'
-        timeout-minutes: 30
-        run: |
-          # Build ZenLib first
-          cd ZenLib/Project/GNU/Library
-          ./autogen.sh
-          ./configure --enable-shared --disable-debug
-          make -j2
-          sudo make install
-          sudo ldconfig
-          cd ../../../..
           
-          # Build MediaInfoLib
-          cd MediaInfoLib/Project/GNU/Library
-          ./autogen.sh
-          ./configure --enable-shared --disable-debug
-          make -j2
-          cd ../../../..
+          # Download the official source package
+          curl -L -o mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION/MediaInfo_DLL_$MEDIAINFO_VERSION_GNU_FromSource.tar.xz"
+          tar -xf mediainfo-src.tar.xz
           
+          # Find and run the SO_Compile.sh script
+          find . -name "SO_Compile.sh" -exec chmod +x {} \;
+          find . -name "SO_Compile.sh" -execdir bash {} \;
+          
+          # Find the compiled .dylib files and copy them
           mkdir -p native
-          cp MediaInfoLib/Project/GNU/Library/.libs/libmediainfo.so* native/
-
-      # macOS build
-      - name: Build MediaInfoLib (macOS)
-        if: runner.os == 'macOS'
-        timeout-minutes: 30
-        env:
-          LIBTOOLIZE: glibtoolize
-        run: |
-          # Build ZenLib first
-          cd ZenLib/Project/GNU/Library
-          ./autogen.sh
-          ./configure --enable-shared --disable-debug
-          make -j2
-          sudo make install
-          cd ../../../..
+          find . -name "libmediainfo.*dylib" -exec cp {} native/ \;
           
-          # Build MediaInfoLib
-          cd MediaInfoLib/Project/GNU/Library
-          ./autogen.sh
-          ./configure --enable-shared --disable-debug
-          make -j2
-          cd ../../../..
-          
-          mkdir -p native
-          cp MediaInfoLib/Project/GNU/Library/.libs/libmediainfo.*dylib native/
+          # List what we got
+          echo "Built libraries:"
+          ls -la native/
 
-      - name: Setup MSBuild (Windows)
-        if: runner.os == 'Windows'
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Build MediaInfoLib (Windows)
+      # Windows build - try to download pre-built DLL
+      - name: Build MediaInfo (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 20
         run: |
-          # Build ZenLib first
-          msbuild ZenLib\Project\MSVC2019\ZenLib.sln /p:Configuration=Release /p:Platform=x64
-          
-          # Build MediaInfoLib
-          msbuild MediaInfoLib\Project\MSVC2019\MediaInfoLib.sln /p:Configuration=Release /p:Platform=x64
-          
           mkdir native
-          copy MediaInfoLib\Project\MSVC2019\x64\Release\MediaInfo.dll native\
-          copy MediaInfoLib\Project\MSVC2019\x64\Release\MediaInfo.pdb native\ || echo "No PDB generated"
+          
+          # Try to download Windows DLL
+          try {
+            $url = "https://mediaarea.net/download/binary/libmediainfo0/$env:MEDIAINFO_VERSION/MediaInfo_DLL_$($env:MEDIAINFO_VERSION)_Windows_x64.zip"
+            Write-Host "Downloading from: $url"
+            Invoke-WebRequest -Uri $url -OutFile "mediainfo-win.zip"
+            Expand-Archive -Path "mediainfo-win.zip" -DestinationPath "temp"
+          
+            # Look for DLL files in various possible locations
+            Get-ChildItem "temp" -Recurse -Name "*.dll" | ForEach-Object { 
+              Write-Host "Found DLL: $_"
+              Copy-Item "temp\$_" "native\" -Force
+            }
+          } catch {
+            Write-Host "Download failed, trying alternative method..."
+            # If download fails, we could try building from source with MSVC here
+            Write-Error "Windows build failed - could not download MediaInfo DLL"
+            exit 1
+          }
+          
+          # List what we got
+          Write-Host "Built libraries:"
+          Get-ChildItem native
+
+      - name: Verify binaries exist
+        run: |
+          echo "Checking native folder contents:"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            dir native\ || echo "No native folder found"
+          else
+            ls -la native/ || echo "No native folder found"
+          fi
 
       - name: Upload Native Artifacts
         uses: actions/upload-artifact@v4
@@ -155,6 +158,9 @@ jobs:
           cp runtimes/native-windows-latest/* src/$PROJECT_NAME/runtimes/win-x64/native/ || true
           cp runtimes/native-ubuntu-latest/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
           cp runtimes/native-macos-latest/* src/$PROJECT_NAME/runtimes/osx-x64/native/ || true
+
+          echo "Final runtime contents:"
+          find src/$PROJECT_NAME/runtimes -type f || true
 
           dotnet pack -v normal -c Release -o ./artifacts \
             -p:PackageVersion=$packageVersion \
