@@ -83,12 +83,40 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
+      - name: Determine Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            arrTag=(${GITHUB_REF//\// })
+            VERSION="${arrTag[2]}"
+            VERSION="${VERSION//v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Building release version: $VERSION"
+          else
+            latestTag=$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.1)
+            runId=$GITHUB_RUN_ID
+            VERSION="${latestTag//v}-build.${runId}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Building pre-release version: $VERSION"
+          fi
+
       - name: Pack
         run: |
-          latestTag=$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.1)
-          runId=$GITHUB_RUN_ID
-          packageVersion="${latestTag//v}-build.${runId}"
-          dotnet pack -v normal -c Release -o ./artifacts --no-restore -p:PackageVersion=$packageVersion src/$PROJECT_NAME/$PROJECT_NAME.csproj
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Packing version: $VERSION"
+
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # Release package with release notes
+            dotnet pack -v normal -c Release -o ./artifacts --no-restore \
+              -p:PackageVersion=$VERSION \
+              -p:PackageReleaseNotes="See full release notes at: https://github.com/${{ github.repository }}/releases/tag/v$VERSION}" \
+              src/$PROJECT_NAME/$PROJECT_NAME.csproj
+          else
+            # Pre-release package
+            dotnet pack -v normal -c Release -o ./artifacts --no-restore \
+              -p:PackageVersion=$VERSION \
+              src/$PROJECT_NAME/$PROJECT_NAME.csproj
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -105,8 +133,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nupkg
+          path: ./nupkg
+
       - name: Push to GitHub Feed
-        run: dotnet nuget push ./*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
+        run: dotnet nuget push ./nupkg/*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
         env:
           NUGET_AUTH_TOKEN: ${{ github.token }}
 
@@ -115,25 +145,17 @@ jobs:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: ./nupkg
 
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             9.x
-
-      - name: Create Release NuGet package
-        run: |
-          arrTag=(${GITHUB_REF//\// })
-          VERSION="${arrTag[2]}"
-          echo Version: $VERSION
-          VERSION="${VERSION//v}"
-          echo Clean Version: $VERSION
-          dotnet pack -v normal -c Release \
-            -p:PackageVersion=$VERSION \
-            -p:PackageReleaseNotes="See full release notes at: https://github.com/${{ github.repository }}/releases/tag/v$VERSION}" \
-            -o nupkg src/$PROJECT_NAME/$PROJECT_NAME.csproj
 
       - name: Push to GitHub Feed
         run: dotnet nuget push ./nupkg/*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
