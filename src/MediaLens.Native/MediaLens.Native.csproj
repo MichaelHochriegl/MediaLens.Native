@@ -2,6 +2,9 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <NoPackageAnalysis>true</NoPackageAnalysis>
+        <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     </PropertyGroup>
 
     <!-- NuGet settings -->
@@ -37,6 +40,11 @@
         <None Include="../../LICENSE.MediaInfo" Pack="true" PackagePath="" />
     </ItemGroup>
 
+    <ItemGroup>
+        <None Include="MediaLens.Native.targets" Pack="true" PackagePath="build/MediaLens.Native.targets" />
+        <None Include="MediaLens.Native.targets" Pack="true" PackagePath="buildTransitive/MediaLens.Native.targets" />
+    </ItemGroup>
+    
     <ItemGroup>
         <!-- Native binaries copied by pipeline -->
         <None Include="runtimes/**" Pack="true" PackagePath="runtimes" />
