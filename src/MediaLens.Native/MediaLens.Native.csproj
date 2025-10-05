@@ -27,7 +27,6 @@
         </Description>
         <IncludeContentInPack>true</IncludeContentInPack>
         <IncludeSymbols>false</IncludeSymbols>
-        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     </PropertyGroup>
 
     <ItemGroup>
