@@ -26,7 +26,7 @@
             Cross-platform native binaries of MediaInfoLib, packaged for use in .NET projects.
         </Description>
         <IncludeContentInPack>true</IncludeContentInPack>
-        <IncludeSymbols>true</IncludeSymbols>
+        <IncludeSymbols>false</IncludeSymbols>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     </PropertyGroup>
 
