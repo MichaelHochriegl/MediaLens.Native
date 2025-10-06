@@ -95,7 +95,7 @@ jobs:
       - name: Download MediaInfo DLL
         shell: pwsh
         run: |
-          $url = "https://mediaarea.net/download/binary/libmediainfo0/$env:MEDIAINFO_VERSION/MediaInfo_DLL_$env:MEDIAINFO_VERSION_Windows_x64_WithoutInstaller.7z"
+          $url = "https://mediaarea.net/download/binary/libmediainfo0/${MEDIAINFO_VERSION}/MediaInfo_DLL_${MEDIAINFO_VERSION}_Windows_x64_WithoutInstaller.7z"
           Invoke-WebRequest -Uri $url -OutFile "mediainfo.7z"
           7z x mediainfo.7z -o"mediainfo-extracted"
 
