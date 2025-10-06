@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 jobs:
-  build-native:
+  build-native-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -54,8 +54,65 @@ jobs:
           name: native-linux-x64
           path: native/
 
+  build-native-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install automake autoconf libtool pkg-config
+
+      - name: Download and extract MediaInfo source
+        run: |
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${MEDIAINFO_VERSION}/MediaInfo_DLL_${MEDIAINFO_VERSION}_GNU_FromSource.tar.xz"
+          tar -xf mediainfo-src.tar.xz
+
+      - name: Run SO_Compile.sh
+        run: |
+          find . -name "SO_Compile.sh" -exec chmod +x {} \;
+          find . -name "SO_Compile.sh" -execdir ./SO_Compile.sh \;
+
+      - name: Copy libraries
+        run: |
+          mkdir -p native
+          find . -name "libmediainfo.dylib" -exec cp {} native/ \;
+          find . -name "libmediainfo.*.dylib" -exec cp {} native/ \;
+
+      - name: Upload Native Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-osx-x64
+          path: native/
+
+  build-native-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download MediaInfo DLL
+        shell: pwsh
+        run: |
+          $url = "https://mediaarea.net/download/binary/libmediainfo0/$env:MEDIAINFO_VERSION/MediaInfo_DLL_$env:MEDIAINFO_VERSION_Windows_x64_WithoutInstaller.7z"
+          Invoke-WebRequest -Uri $url -OutFile "mediainfo.7z"
+          7z x mediainfo.7z -o"mediainfo-extracted"
+
+      - name: Copy libraries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path native
+          Copy-Item -Path "mediainfo-extracted\*.dll" -Destination "native\" -Recurse -ErrorAction SilentlyContinue
+
+      - name: Upload Native Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x64
+          path: native/
+
   build:
-    needs: build-native
+    needs: [ build-native-linux, build-native-macos, build-native-windows ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -75,7 +132,11 @@ jobs:
       - name: Prepare native libraries
         run: |
           mkdir -p src/$PROJECT_NAME/runtimes/linux-x64/native
+          mkdir -p src/$PROJECT_NAME/runtimes/osx-x64/native
+          mkdir -p src/$PROJECT_NAME/runtimes/win-x64/native
           cp runtimes/native-linux-x64/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
+          cp runtimes/native-osx-x64/* src/$PROJECT_NAME/runtimes/osx-x64/native/ || true
+          cp runtimes/native-win-x64/* src/$PROJECT_NAME/runtimes/win-x64/native/ || true
 
       - name: Restore
         run: dotnet restore
