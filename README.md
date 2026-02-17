@@ -8,7 +8,7 @@ Install the native package (usually pulled in by the wrapper):
 
     dotnet add package MediaLens.Native
 
-For the managed wrapper:
+For the [managed wrapper](https://github.com/MichaelHochriegl/MediaLens) (coming soon):
 
     dotnet add package MediaLens
 
@@ -21,28 +21,6 @@ The NuGet package places platform binaries under the standard runtime layout:
       osx-x64/native/libmediainfo.dylib
 
 Also included in the package: `README.md`, `LICENSE` (MIT), and `LICENSE.MediaInfo` (BSD-2-Clause).
-
-## Quick build notes
-**Linux / macOS (autotools)**
-- Clone upstream and build the GNU library:
-
-  git clone https://github.com/MediaArea/MediaInfoLib.git
-  cd MediaInfoLib/Project/GNU/Library
-  ./autogen.sh
-  ./configure --enable-shared
-  make -j$(nproc || sysctl -n hw.ncpu)
-
-- Copy the produced `.so` / `.dylib` into `src/MediaLens.Native/runtimes/<rid>/native/`.
-
-**Windows (MSVC)**
-- Build the MSVC solution (x64 Release), then copy `MediaInfo.dll` to `src/MediaLens.Native/runtimes/win-x64/native/`:
-
-  msbuild MediaInfoLib\Project\MSVC2019\MediaInfoLib.sln /p:Configuration=Release /p:Platform=x64
-
-## Pack locally
-(assumes binaries are already in `src/MediaLens.Native/runtimes/...`)
-
-    dotnet pack src/MediaLens.Native/MediaLens.Native.csproj -c Release -o ./out
 
 ## CI / Publishing
 The repository includes a GitHub Actions workflow that:
