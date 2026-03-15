@@ -176,16 +176,39 @@ jobs:
           cp runtimes/native-win-x64/* src/$PROJECT_NAME/runtimes/win-x64/native/ || true
           
       - name: Verify packaged native layout
+        shell: bash
         run: |
-          find src/$PROJECT_NAME/runtimes -type f | sort
-          for f in $(find src/$PROJECT_NAME/runtimes -type f); do
-            case "$f" in
-              *.so|*.dll|*.dylib)
-                echo "---- $f"
-                file "$f" || true
-                lipo -info "$f" || true
-                ;;
-            esac
+          set -euo pipefail
+
+          base="src/$PROJECT_NAME/runtimes"
+
+          declare -a dirs=(
+            "$base/linux-x64/native"
+            "$base/osx-x64/native"
+            "$base/osx-arm64/native"
+            "$base/win-x64/native"
+          )
+
+          echo "Packaged native files:"
+          find "$base" -type f | sort
+
+          for dir in "${dirs[@]}"; do
+            echo "Checking $dir"
+            if [ ! -d "$dir" ]; then
+              echo "ERROR: Missing directory $dir"
+              exit 1
+            fi
+
+            if ! find "$dir" -maxdepth 1 -type f | grep -q .; then
+              echo "ERROR: No native files found in $dir"
+              exit 1
+            fi
+          done
+
+          echo "Inspecting binaries"
+          find "$base" -type f \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) | while read -r f; do
+            echo "---- $f"
+            file "$f" || true
           done
 
       - name: Restore
@@ -228,6 +251,17 @@ jobs:
               -p:PackageVersion=$VERSION \
               src/$PROJECT_NAME/$PROJECT_NAME.csproj
           fi
+
+      - name: Verify nupkg contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          pkg=$(find artifacts -name "*.nupkg" | head -n 1)
+          unzip -l "$pkg" | grep "runtimes/linux-x64/native/" >/dev/null
+          unzip -l "$pkg" | grep "runtimes/osx-x64/native/" >/dev/null
+          unzip -l "$pkg" | grep "runtimes/osx-arm64/native/" >/dev/null
+          unzip -l "$pkg" | grep "runtimes/win-x64/native/" >/dev/null
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
