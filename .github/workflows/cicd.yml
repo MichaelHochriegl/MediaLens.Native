@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -54,11 +54,11 @@ jobs:
           name: native-linux-x64
           path: native/
 
-  build-native-macos:
-    runs-on: macos-latest
+  build-native-macos-x64:
+    runs-on: macos-26-intel
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -85,12 +85,44 @@ jobs:
         with:
           name: native-osx-x64
           path: native/
+          
+  build-native-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          brew install automake autoconf libtool pkg-config
+
+      - name: Download and extract MediaInfo source
+        run: |
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${MEDIAINFO_VERSION}/MediaInfo_DLL_${MEDIAINFO_VERSION}_GNU_FromSource.tar.xz"
+          tar -xf mediainfo-src.tar.xz
+
+      - name: Run SO_Compile.sh
+        run: |
+          find . -name "SO_Compile.sh" -exec chmod +x {} \;
+          find . -name "SO_Compile.sh" -execdir ./SO_Compile.sh \;
+
+      - name: Copy libraries
+        run: |
+          mkdir -p native
+          find . -name "libmediainfo.dylib" -exec cp {} native/ \;
+          find . -name "libmediainfo.*.dylib" -exec cp {} native/ \;
+
+      - name: Upload Native Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-osx-arm64
+          path: native/
 
   build-native-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download MediaInfo DLL
         shell: pwsh
@@ -115,11 +147,11 @@ jobs:
           path: native/
 
   build:
-    needs: [ build-native-linux, build-native-macos, build-native-windows ]
+    needs: [ build-native-linux, build-native-macos-x64, build-native-macos-arm64, build-native-windows ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download Native Artifacts
         uses: actions/download-artifact@v4
@@ -127,19 +159,57 @@ jobs:
           path: runtimes
 
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
-            9.x
+            10.x
 
       - name: Prepare native libraries
         run: |
           mkdir -p src/$PROJECT_NAME/runtimes/linux-x64/native
           mkdir -p src/$PROJECT_NAME/runtimes/osx-x64/native
+          mkdir -p src/$PROJECT_NAME/runtimes/osx-arm64/native
           mkdir -p src/$PROJECT_NAME/runtimes/win-x64/native
           cp runtimes/native-linux-x64/* src/$PROJECT_NAME/runtimes/linux-x64/native/ || true
           cp runtimes/native-osx-x64/* src/$PROJECT_NAME/runtimes/osx-x64/native/ || true
+          cp runtimes/native-osx-arm64/* src/$PROJECT_NAME/runtimes/osx-arm64/native/ || true
           cp runtimes/native-win-x64/* src/$PROJECT_NAME/runtimes/win-x64/native/ || true
+          
+      - name: Verify packaged native layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base="src/$PROJECT_NAME/runtimes"
+
+          declare -a dirs=(
+            "$base/linux-x64/native"
+            "$base/osx-x64/native"
+            "$base/osx-arm64/native"
+            "$base/win-x64/native"
+          )
+
+          echo "Packaged native files:"
+          find "$base" -type f | sort
+
+          for dir in "${dirs[@]}"; do
+            echo "Checking $dir"
+            if [ ! -d "$dir" ]; then
+              echo "ERROR: Missing directory $dir"
+              exit 1
+            fi
+
+            if ! find "$dir" -maxdepth 1 -type f | grep -q .; then
+              echo "ERROR: No native files found in $dir"
+              exit 1
+            fi
+          done
+
+          echo "Inspecting binaries"
+          find "$base" -type f \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) | while read -r f; do
+            echo "---- $f"
+            file "$f" || true
+          done
 
       - name: Restore
         run: dotnet restore
@@ -171,9 +241,9 @@ jobs:
 
           if [ "${{ github.event_name }}" == "release" ]; then
             # Release package with release notes
-            dotnet pack -v normal -c Release -o ./artifacts --no-restore \
+            dotnet pack -v normal -c Release -o ./artifacts --no-restore --no-build \
               -p:PackageVersion=$VERSION \
-              -p:PackageReleaseNotes="See full release notes at: https://github.com/${{ github.repository }}/releases/tag/v$VERSION}" \
+              -p:PackageReleaseNotes="See full release notes at: https://github.com/${{ github.repository }}/releases/tag/v$VERSION" \
               src/$PROJECT_NAME/$PROJECT_NAME.csproj
           else
             # Pre-release package
@@ -181,6 +251,17 @@ jobs:
               -p:PackageVersion=$VERSION \
               src/$PROJECT_NAME/$PROJECT_NAME.csproj
           fi
+
+      - name: Verify nupkg contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          pkg=$(find artifacts -name "*.nupkg" | head -n 1)
+          unzip -l "$pkg" | grep "runtimes/linux-x64/native/" >/dev/null
+          unzip -l "$pkg" | grep "runtimes/osx-x64/native/" >/dev/null
+          unzip -l "$pkg" | grep "runtimes/osx-arm64/native/" >/dev/null
+          unzip -l "$pkg" | grep "runtimes/win-x64/native/" >/dev/null
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -190,7 +271,7 @@ jobs:
 
   prerelease:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download Artifact
@@ -216,10 +297,10 @@ jobs:
           path: ./nupkg
 
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
-            9.x
+            10.x
 
       - name: Push to GitHub Feed
         run: dotnet nuget push ./nupkg/*.nupkg --source $GITHUB_FEED --no-symbols --skip-duplicate --api-key $GITHUB_TOKEN
