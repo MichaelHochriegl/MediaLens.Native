@@ -15,14 +15,35 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   NUGET_FEED: https://api.nuget.org/v3/index.json
   NUGET_KEY: ${{ secrets.NUGET_KEY }}
-  MEDIAINFO_VERSION: "26.01"
 
 permissions:
   packages: write
   contents: read
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      mediainfo_version: ${{ steps.version.outputs.mediainfo_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Read MediaInfo version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.version' mediainfo-version.json)
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "ERROR: mediainfo-version.json does not contain a valid .version value"
+            exit 1
+          fi
+          echo "mediainfo_version=$version" >> "$GITHUB_OUTPUT"
+          echo "MediaInfo version: $version"
+
   build-native-linux:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,7 +56,8 @@ jobs:
 
       - name: Download and extract MediaInfo source
         run: |
-          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${MEDIAINFO_VERSION}/MediaInfo_DLL_${MEDIAINFO_VERSION}_GNU_FromSource.tar.xz"
+          VERSION="${{ needs.prepare.outputs.mediainfo_version }}"
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${VERSION}/MediaInfo_DLL_${VERSION}_GNU_FromSource.tar.xz"
           tar -xf mediainfo-src.tar.xz
 
       - name: Run SO_Compile.sh
@@ -55,6 +77,7 @@ jobs:
           path: native/
 
   build-native-macos-x64:
+    needs: prepare
     runs-on: macos-26-intel
     steps:
       - name: Checkout
@@ -66,7 +89,8 @@ jobs:
 
       - name: Download and extract MediaInfo source
         run: |
-          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${MEDIAINFO_VERSION}/MediaInfo_DLL_${MEDIAINFO_VERSION}_GNU_FromSource.tar.xz"
+          VERSION="${{ needs.prepare.outputs.mediainfo_version }}"
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${VERSION}/MediaInfo_DLL_${VERSION}_GNU_FromSource.tar.xz"
           tar -xf mediainfo-src.tar.xz
 
       - name: Run SO_Compile.sh
@@ -85,8 +109,9 @@ jobs:
         with:
           name: native-osx-x64
           path: native/
-          
+
   build-native-macos-arm64:
+    needs: prepare
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -98,7 +123,8 @@ jobs:
 
       - name: Download and extract MediaInfo source
         run: |
-          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${MEDIAINFO_VERSION}/MediaInfo_DLL_${MEDIAINFO_VERSION}_GNU_FromSource.tar.xz"
+          VERSION="${{ needs.prepare.outputs.mediainfo_version }}"
+          wget -O mediainfo-src.tar.xz "https://mediaarea.net/download/binary/libmediainfo0/${VERSION}/MediaInfo_DLL_${VERSION}_GNU_FromSource.tar.xz"
           tar -xf mediainfo-src.tar.xz
 
       - name: Run SO_Compile.sh
@@ -119,6 +145,7 @@ jobs:
           path: native/
 
   build-native-windows:
+    needs: prepare
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -127,9 +154,9 @@ jobs:
       - name: Download MediaInfo DLL
         shell: pwsh
         run: |
-          $version = "${{ env.MEDIAINFO_VERSION }}"
+          $version = "${{ needs.prepare.outputs.mediainfo_version }}"
           Write-Host "Version: $version"
-          $url = "https://mediaarea.net/download/binary/libmediainfo0/${version}/MediaInfo_DLL_${version}_Windows_x64_WithoutInstaller.7z"
+          $url = "https://mediaarea.net/download/binary/libmediainfo0/$version/MediaInfo_DLL_${version}_Windows_x64_WithoutInstaller.7z"
           Write-Host "URL: $url"
           Invoke-WebRequest -Uri $url -OutFile "mediainfo.7z"
           7z x mediainfo.7z -o"mediainfo-extracted"
@@ -147,7 +174,12 @@ jobs:
           path: native/
 
   build:
-    needs: [ build-native-linux, build-native-macos-x64, build-native-macos-arm64, build-native-windows ]
+    needs:
+      - prepare
+      - build-native-linux
+      - build-native-macos-x64
+      - build-native-macos-arm64
+      - build-native-windows
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
