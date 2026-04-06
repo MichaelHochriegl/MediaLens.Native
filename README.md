@@ -2,7 +2,7 @@
 [![NuGet](https://img.shields.io/nuget/v/MediaLens.Native)](https://www.nuget.org/packages/MediaLens.Native/)
 [![MediaInfo version](https://img.shields.io/badge/dynamic/json?label=MediaInfo%20version&query=%24.version&url=https://raw.githubusercontent.com/MichaelHochriegl/MediaLens.Native/main/mediainfo-version.json)](https://mediaarea.net/en/MediaInfo)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CI](https://github.com/MichaelHochriegl/MediaLens.Native/actions/workflows/ci.yml/badge.svg)](https://github.com/MichaelHochriegl/MediaLens.Native/actions/workflows/ci.yml)
+[![CI](https://github.com/MichaelHochriegl/MediaLens.Native/actions/workflows/cicd.yml/badge.svg)](https://github.com/MichaelHochriegl/MediaLens.Native/actions/workflows/cicd.yml)
 
 # MediaLens.Native
 
