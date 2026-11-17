@@ -14,7 +14,6 @@ env:
   GITHUB_FEED: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   NUGET_FEED: https://api.nuget.org/v3/index.json
-  NUGET_KEY: ${{ secrets.NUGET_KEY }}
 
 permissions:
   packages: write
@@ -321,6 +320,10 @@ jobs:
     needs: build
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+      id-token: write
     steps:
       - name: Download Artifact
         uses: actions/download-artifact@v4
@@ -339,5 +342,13 @@ jobs:
         env:
           NUGET_AUTH_TOKEN: $GITHUB_TOKEN
 
+      - name: NuGet login (OIDC → temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push to NuGet Feed
         run: dotnet nuget push ./nupkg/*.nupkg --source $NUGET_FEED --skip-duplicate --api-key $NUGET_KEY
+        env:
+          NUGET_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
